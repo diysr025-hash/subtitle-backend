@@ -4,7 +4,9 @@ const multer = require("multer");
 const fs = require("fs");
 const OpenAI = require("openai");
 require("dotenv").config();
-
+console.log("OPENAI KEY EXISTS:", !!process.env.OPENAI_API_KEY);
+console.log("OPENAI KEY START:", process.env.OPENAI_API_KEY?.slice(0, 8));
+console.log("OPENAI KEY END:", process.env.OPENAI_API_KEY?.slice(-4));
 const app = express();
 
 app.use(cors());
