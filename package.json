@@ -16,8 +16,8 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
+    "groq-sdk": "^1.2.0",
     "multer": "^2.1.1",
-    "nodemon": "^3.1.14",
-    "openai": "^6.38.0"
+    "nodemon": "^3.1.14"
   }
 }
