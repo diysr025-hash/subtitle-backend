@@ -31,21 +31,28 @@ app.post("/upload", upload.single("video"), async (req, res) => {
       });
     }
 
-    console.log("Processing file:", req.file.originalname);
+    console.log("Uploaded file:", req.file.originalname);
+    console.log("File type:", req.file.mimetype);
+
+    const fileData = fs.readFileSync(req.file.path);
 
     const transcription = await groq.audio.transcriptions.create({
-      file: fs.createReadStream(req.file.path),
+      file: new File(
+        [fileData],
+        req.file.originalname,
+        {
+          type: req.file.mimetype,
+        }
+      ),
       model: "whisper-large-v3-turbo",
       response_format: "verbose_json",
     });
-
-    const text = transcription.text;
 
     fs.unlinkSync(req.file.path);
 
     res.json({
       success: true,
-      text,
+      text: transcription.text,
     });
 
   } catch (error) {
