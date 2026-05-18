@@ -46,15 +46,23 @@ app.post("/upload", upload.single("video"), async (req, res) => {
       ),
       model: "whisper-large-v3-turbo",
       response_format: "verbose_json",
+      timestamp_granularities: ["segment"],
     });
 
     fs.unlinkSync(req.file.path);
 
+    const subtitles = (transcription.segments || []).map((segment, index) => ({
+      id: index + 1,
+      start: segment.start,
+      end: segment.end,
+      text: segment.text.trim(),
+    }));
+    
     res.json({
       success: true,
       text: transcription.text,
+      subtitles,
     });
-
   } catch (error) {
     console.error("Transcription failed:", error);
 
