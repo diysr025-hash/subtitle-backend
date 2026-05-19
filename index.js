@@ -24,56 +24,48 @@ app.get("/", (req, res) => {
 
 app.post("/upload", upload.single("video"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: "No video uploaded",
-      });
-    }
-
-    console.log("Uploaded file:", req.file.originalname);
-    console.log("File type:", req.file.mimetype);
-
-    const fileData = fs.readFileSync(req.file.path);
-
     const transcription = await groq.audio.transcriptions.create({
-      file: new File(
-        [fileData],
-        req.file.originalname,
-        {
-          type: req.file.mimetype,
-        }
-      ),
-      model: "whisper-large-v3-turbo",
+      file: fs.createReadStream(req.file.path),
+      model: "whisper-large-v3",
       response_format: "verbose_json",
-      timestamp_granularities: ["segment"],
+      language: "hi",
+      prompt:
+        "Transcribe Hindi speech as natural Hinglish using English letters only. Do not use Devanagari Hindi script.",
+    });
+
+    const hinglish = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content:
+          "You are a Hinglish subtitle expert for Indian YouTube/Reels creators. Convert the text into natural Hinglish using ONLY English letters. Never use Hindi/Devanagari script. Fix obvious speech recognition mistakes. Keep captions short, clean, and easy to read. Return only Hinglish text.",
+        },
+        {
+          role: "user",
+          content: transcription.text,
+        },
+      ],
     });
 
     fs.unlinkSync(req.file.path);
-
-    const subtitles = (transcription.segments || []).map((segment, index) => ({
-      id: index + 1,
-      start: segment.start,
-      end: segment.end,
-      text: segment.text.trim(),
-    }));
-    
+    console.log("HINGLISH OUTPUT:", hinglish.choices[0].message.content);
     res.json({
       success: true,
-      text: transcription.text,
-      subtitles,
+      originalHindi: transcription.text,
+      text: hinglish.choices[0].message.content,
+      language: "hinglish",
     });
   } catch (error) {
-    console.error("Transcription failed:", error);
+    console.error("Upload error:", error);
 
-    if (req.file?.path && fs.existsSync(req.file.path)) {
+    if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
 
     res.status(500).json({
       success: false,
-      error: "Transcription failed",
-      details: error.message,
+      error: error.message,
     });
   }
 });
