@@ -24,8 +24,11 @@ app.get("/", (req, res) => {
 
 app.post("/upload", upload.single("video"), async (req, res) => {
   try {
+    const fileStream = fs.createReadStream(req.file.path);
+    fileStream.path = req.file.originalname;
+
     const transcription = await groq.audio.transcriptions.create({
-      file: fs.createReadStream(req.file.path),
+      file: fileStream,
       model: "whisper-large-v3",
       response_format: "verbose_json",
       language: "hi",
