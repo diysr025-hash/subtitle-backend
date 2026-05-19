@@ -25,16 +25,15 @@ app.get("/", (req, res) => {
 app.post("/upload", upload.single("video"), async (req, res) => {
   try {
     const fileStream = fs.createReadStream(req.file.path);
-    fileStream.path = req.file.originalname;
 
     const transcription = await groq.audio.transcriptions.create({
       file: fileStream,
       model: "whisper-large-v3",
       response_format: "verbose_json",
       language: "hi",
-      prompt:
-        "Transcribe Hindi speech as natural Hinglish using English letters only. Do not use Devanagari Hindi script.",
     });
+
+    const rawText = transcription.text;
 
     const hinglish = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -42,20 +41,20 @@ app.post("/upload", upload.single("video"), async (req, res) => {
         {
           role: "system",
           content:
-          "You are a Hinglish subtitle expert for Indian YouTube/Reels creators. Convert the text into natural Hinglish using ONLY English letters. Never use Hindi/Devanagari script. Fix obvious speech recognition mistakes. Keep captions short, clean, and easy to read. Return only Hinglish text.",
+            "Convert Hindi text into natural Hinglish using English letters only. Never use Hindi script.",
         },
         {
           role: "user",
-          content: transcription.text,
+          content: rawText,
         },
       ],
     });
 
     fs.unlinkSync(req.file.path);
-    console.log("HINGLISH OUTPUT:", hinglish.choices[0].message.content);
+
     res.json({
       success: true,
-      originalHindi: transcription.text,
+      originalHindi: rawText,
       text: hinglish.choices[0].message.content,
       language: "hinglish",
     });
