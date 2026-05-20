@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
+const path = require("path");
 const Groq = require("groq-sdk");
 require("dotenv").config();
 
@@ -14,8 +15,28 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+// Make sure uploads folder exists
+const uploadDir = "uploads";
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+// IMPORTANT: keep original file extension like .mp4
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    cb(null, Date.now() + ext);
+  },
+});
+
 const upload = multer({
-  dest: "uploads/",
+  storage: storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024,
+  },
 });
 
 app.get("/", (req, res) => {
@@ -24,10 +45,11 @@ app.get("/", (req, res) => {
 
 app.post("/upload", upload.single("video"), async (req, res) => {
   try {
-    const fileStream = fs.createReadStream(req.file.path);
+    console.log("Uploaded file:", req.file.originalname);
+    console.log("Saved path:", req.file.path);
 
     const transcription = await groq.audio.transcriptions.create({
-      file: fileStream,
+      file: fs.createReadStream(req.file.path),
       model: "whisper-large-v3",
       response_format: "verbose_json",
       language: "hi",
@@ -41,7 +63,7 @@ app.post("/upload", upload.single("video"), async (req, res) => {
         {
           role: "system",
           content:
-            "Convert Hindi text into natural Hinglish using English letters only. Never use Hindi script.",
+            "Convert Hindi text into natural Hinglish using English letters only. Never use Hindi script. Return only the final Hinglish subtitle text.",
         },
         {
           role: "user",
