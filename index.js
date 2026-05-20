@@ -105,8 +105,7 @@ app.post("/upload", upload.single("video"), async (req, res) => {
         {
           role: "system",
           content:
-            "Convert each Hindi subtitle line into natural Hinglish using English letters only. Never use Hindi script. Keep meaning same. Return only valid JSON array. Format: [{\"id\":0,\"text\":\"converted text\"}]",
-        },
+            "Convert each Hindi subtitle line into Roman Hinglish, NOT English translation. Keep Hindi words, but write them using English letters. Never use Devanagari Hindi script. Do not translate to full English. Example: 'मुझे कभी नहीं लगा था कि हम कोयले से इतने रंग बना सकते हैं' becomes 'Mujhe kabhi nahi laga tha ki hum koile se itne rang bana sakte hain'. Return only valid JSON array. Format: [{\"id\":0,\"text\":\"converted text\"}]"
         {
           role: "user",
           content: JSON.stringify(
