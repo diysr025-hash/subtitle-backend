@@ -55,30 +55,41 @@ app.post("/upload", upload.single("video"), async (req, res) => {
       language: "hi",
     });
 
-    const rawText = transcription.text;
+    const segments = transcription.segments || [];
 
-    const hinglish = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Convert Hindi text into natural Hinglish using English letters only. Never use Hindi script. Return only the final Hinglish subtitle text.",
-        },
-        {
-          role: "user",
-          content: rawText,
-        },
-      ],
-    });
+    const cues = [];
+
+    for (const segment of segments) {
+      const hinglish = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Convert this Hindi subtitle line into natural Hinglish using English letters only. Do not add extra words. Keep the same meaning. Return only the converted line.",
+          },
+          {
+            role: "user",
+            content: segment.text,
+          },
+        ],
+      });
+
+      cues.push({
+        start: segment.start,
+        end: segment.end,
+        text: hinglish.choices[0].message.content.trim(),
+      });
+    }
 
     fs.unlinkSync(req.file.path);
 
     res.json({
       success: true,
-      originalHindi: rawText,
-      text: hinglish.choices[0].message.content,
       language: "hinglish",
+      text: cues.map((cue) => cue.text).join(" "),
+      cues: cues,
+      originalHindi: transcription.text,
     });
   } catch (error) {
     console.error("Upload error:", error);
@@ -92,10 +103,4 @@ app.post("/upload", upload.single("video"), async (req, res) => {
       error: error.message,
     });
   }
-});
-
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });
