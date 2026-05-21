@@ -21,6 +21,7 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
+app.use("/uploads", express.static(uploadDir));
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadDir);
@@ -154,18 +155,24 @@ app.post("/upload", upload.single("video"), async (req, res) => {
 
     fs.unlinkSync(req.file.path);
 
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const videoUrl = `${baseUrl}/uploads/${req.file.filename}`;
+    
     res.json({
       success: true,
       language: "hinglish",
       text: finalCues.map((cue) => cue.text).join(" "),
       cues: finalCues,
       originalHindi: transcription.text,
+      videoUrl: videoUrl,
+      videoName: req.file.originalname,
+    });
     });
   } catch (error) {
     console.error("Upload error:", error);
 
     if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+      
     }
 
     res.status(500).json({
