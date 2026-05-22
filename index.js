@@ -22,12 +22,13 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 app.use("/uploads", express.static(uploadDir));
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(file.originalname) || ".mp4";
     cb(null, Date.now() + ext);
   },
 });
@@ -43,35 +44,6 @@ app.get("/", (req, res) => {
   res.send("Backend is running successfully 🚀");
 });
 
-function splitIntoShortCues(text, start, end) {
-  const words = text.trim().split(/\s+/);
-  const maxWords = 5;
-
-  if (words.length <= maxWords) {
-    return [
-      {
-        start,
-        end,
-        text,
-      },
-    ];
-  }
-
-  const chunks = [];
-
-  for (let i = 0; i < words.length; i += maxWords) {
-    chunks.push(words.slice(i, i + maxWords).join(" "));
-  }
-
-  const duration = end - start;
-  const cueDuration = duration / chunks.length;
-
-  return chunks.map((chunk, index) => ({
-    start: Number((start + cueDuration * index).toFixed(2)),
-    end: Number((start + cueDuration * (index + 1)).toFixed(2)),
-    text: chunk,
-  }));
-}
 function makeSmartCuesFromWords(words, fallbackSegments = []) {
   if (!Array.isArray(words) || words.length === 0) {
     return fallbackSegments.map((segment) => ({
@@ -150,6 +122,13 @@ function makeSmartCuesFromWords(words, fallbackSegments = []) {
   return cleaned;
 }
 
+function cleanJsonFromModel(content) {
+  return String(content || "")
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+}
+
 app.post("/upload", upload.single("video"), async (req, res) => {
   try {
     if (!req.file) {
@@ -173,16 +152,18 @@ app.post("/upload", upload.single("video"), async (req, res) => {
 
     const segments = transcription.segments || [];
     const words = transcription.words || [];
-    
+
     const originalCues = makeSmartCuesFromWords(words, segments);
 
     const convertResponse = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
+      temperature: 0,
       messages: [
         {
           role: "system",
           content:
-            "Convert each Hindi subtitle line into Roman Hinglish, NOT English translation. Keep Hindi words, but write them using English letters. Never use Devanagari Hindi script. Do not translate to full English. Example: 'मुझे कभी नहीं लगा था कि हम कोयले से इतने रंग बना सकते हैं' becomes 'Mujhe kabhi nahi laga tha ki hum koile se itne rang bana sakte hain'. Return only valid JSON array. Format: [{\"id\":0,\"text\":\"converted text\"}]"
+            "You are a Roman Hinglish subtitle converter for Indian creators. Output Roman Hinglish only, not English. If the input is Hindi/Devanagari, transliterate it into English letters. If the input is already English, convert it into natural Hindi-style Hinglish using English letters. Never output pure English sentences. Keep the meaning same and keep captions short. Fix obvious Hinglish spelling mistakes. Use common spellings like mujhe, kabhi, nahi, koile, rang, bana, sakte, hain. Return only valid JSON array. Format: [{\"id\":0,\"text\":\"converted text\"}]",
+        },
         {
           role: "user",
           content: JSON.stringify(
@@ -198,57 +179,47 @@ app.post("/upload", upload.single("video"), async (req, res) => {
     let convertedLines = [];
 
     try {
-      const content = convertResponse.choices[0].message.content
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
+      const content = cleanJsonFromModel(
+        convertResponse.choices[0].message.content
+      );
 
       convertedLines = JSON.parse(content);
     } catch (parseError) {
       console.error("JSON parse failed:", parseError);
+
       convertedLines = originalCues.map((cue, index) => ({
         id: index,
         text: cue.text,
       }));
     }
 
-    const finalCues = [];
+    const finalCues = originalCues.map((cue, index) => {
+      const converted = convertedLines.find((line) => line.id === index);
 
-    for (let i = 0; i < originalCues.length; i++) {
-      const originalCue = originalCues[i];
-      const converted = convertedLines.find((line) => line.id === i);
-
-      const hinglishText = converted?.text || originalCue.text;
-
-      const shortCues = splitIntoShortCues(
-        hinglishText,
-        originalCue.start,
-        originalCue.end
-      );
-
-      finalCues.push(...shortCues);
-    }
-
-    fs.unlinkSync(req.file.path);
+      return {
+        start: cue.start,
+        end: cue.end,
+        text: String(converted?.text || cue.text).trim(),
+      };
+    });
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     const videoUrl = `${baseUrl}/uploads/${req.file.filename}`;
-    
+
     res.json({
       success: true,
       language: "hinglish",
       text: finalCues.map((cue) => cue.text).join(" "),
       cues: finalCues,
       originalHindi: transcription.text,
-      videoUrl: videoUrl,
+      videoUrl,
       videoName: req.file.originalname,
-    });
     });
   } catch (error) {
     console.error("Upload error:", error);
 
     if (req.file && fs.existsSync(req.file.path)) {
-      
+      fs.unlinkSync(req.file.path);
     }
 
     res.status(500).json({
