@@ -72,6 +72,83 @@ function splitIntoShortCues(text, start, end) {
     text: chunk,
   }));
 }
+function makeSmartCuesFromWords(words, fallbackSegments = []) {
+  if (!Array.isArray(words) || words.length === 0) {
+    return fallbackSegments.map((segment) => ({
+      start: Number(segment.start),
+      end: Number(segment.end),
+      text: String(segment.text || "").trim(),
+    }));
+  }
+
+  const cues = [];
+  let currentWords = [];
+  let cueStart = null;
+
+  const maxWords = 7;
+  const maxDuration = 3.2;
+  const pauseGap = 0.45;
+
+  for (let i = 0; i < words.length; i++) {
+    const item = words[i];
+    const word = String(item.word || "").trim();
+    const start = Number(item.start);
+    const end = Number(item.end);
+
+    if (!word || !Number.isFinite(start) || !Number.isFinite(end)) continue;
+
+    if (cueStart === null) cueStart = start;
+
+    const prev = words[i - 1];
+    const prevEnd = prev ? Number(prev.end) : start;
+    const gap = start - prevEnd;
+
+    const currentDuration = end - cueStart;
+    const shouldBreak =
+      currentWords.length >= maxWords ||
+      currentDuration >= maxDuration ||
+      gap >= pauseGap;
+
+    if (shouldBreak && currentWords.length > 0) {
+      cues.push({
+        start: Number(cueStart.toFixed(2)),
+        end: Number(prevEnd.toFixed(2)),
+        text: currentWords.join(" "),
+      });
+
+      currentWords = [];
+      cueStart = start;
+    }
+
+    currentWords.push(word.replace(/^[\s,.!?]+|[\s,.!?]+$/g, ""));
+  }
+
+  if (currentWords.length > 0 && cueStart !== null) {
+    const lastWord = words[words.length - 1];
+
+    cues.push({
+      start: Number(cueStart.toFixed(2)),
+      end: Number(Number(lastWord.end).toFixed(2)),
+      text: currentWords.join(" "),
+    });
+  }
+
+  const cleaned = [];
+
+  for (const cue of cues) {
+    const wordCount = cue.text.split(/\s+/).filter(Boolean).length;
+
+    if (wordCount <= 2 && cleaned.length > 0) {
+      const prev = cleaned[cleaned.length - 1];
+      prev.end = cue.end;
+      prev.text = `${prev.text} ${cue.text}`.trim();
+    } else {
+      cleaned.push(cue);
+    }
+  }
+
+  return cleaned;
+}
 
 app.post("/upload", upload.single("video"), async (req, res) => {
   try {
@@ -90,15 +167,14 @@ app.post("/upload", upload.single("video"), async (req, res) => {
       model: "whisper-large-v3",
       response_format: "verbose_json",
       language: "hi",
+      temperature: 0,
+      timestamp_granularities: ["word", "segment"],
     });
 
     const segments = transcription.segments || [];
-
-    const originalCues = segments.map((segment) => ({
-      start: segment.start,
-      end: segment.end,
-      text: segment.text,
-    }));
+    const words = transcription.words || [];
+    
+    const originalCues = makeSmartCuesFromWords(words, segments);
 
     const convertResponse = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
