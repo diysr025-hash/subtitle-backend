@@ -159,11 +159,27 @@ app.post("/upload", upload.single("video"), async (req, res) => {
       const content = cleanJsonFromModel(
         convertResponse.choices[0].message.content
       );
-
-      convertedLines = JSON.parse(content);
+    
+      const parsed = JSON.parse(content);
+    
+      if (Array.isArray(parsed)) {
+        convertedLines = parsed;
+      } else if (Array.isArray(parsed.subtitles)) {
+        convertedLines = parsed.subtitles;
+      } else if (Array.isArray(parsed.items)) {
+        convertedLines = parsed.items;
+      } else if (Array.isArray(parsed.cues)) {
+        convertedLines = parsed.cues;
+      } else {
+        console.error("AI returned JSON but not an array:", parsed);
+        convertedLines = originalCues.map((cue) => ({
+          id: cue.id,
+          text: cue.text,
+        }));
+      }
     } catch (parseError) {
       console.error("JSON parse failed:", parseError);
-
+    
       convertedLines = originalCues.map((cue) => ({
         id: cue.id,
         text: cue.text,
@@ -173,9 +189,9 @@ app.post("/upload", upload.single("video"), async (req, res) => {
     // Step 3: Combine original timings with corrected Hinglish text
     const finalCuesRaw = originalCues.map((cue) => {
       const converted = convertedLines.find(
-        (line) => Number(line.id) === cue.id
+        (line) => Number(line.id) === Number(cue.id)
       );
-
+    
       return {
         start: cue.start,
         end: cue.end,
